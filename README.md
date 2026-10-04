@@ -6,7 +6,7 @@ Uma API REST moderna desenvolvida em Python com **FastAPI** para gerenciar o flu
 *   **Cadastro de Clientes:** Registro com ID único, nome, telefone e estilo de tatuagem preferido.
 *   **Fila de Espera por Ordem de Chegada:** Entrada e visualização da fila para atendimentos dinâmicos.
 *   **Painel do Tatuador:** Sistema para chamar e remover o próximo cliente da fila automaticamente.
-*   **Agendamentos com Data e Hora:** Marcação de sessões individuais por tatuador, contando com validação inteligente contra conflitos de horários (bloqueia o agendamento se o profissional já estiver ocupado).
+*   **Agendamentos com Data e Hora:** Marcação de sessões individuais por tatuador, contando com validação inteligente contra conflitos de horários (bloqueia o agendamento se o profissional já estiver ocupado) e inexistência do nome do profissional no "estúdio".
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -42,4 +42,4 @@ Após iniciar o servidor, abra o seu navegador e acesse a documentação interat
 👉 **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 ---
-🛠️ *Projeto desenvolvido como parte dos meus estudos para aprender Engenharia de Software e Back-end com Python.*
+🛠️ *Este projeto está sendo desenvolvido como parte dos meus estudos para aprender Engenharia de Software e Back-end com Python.*
