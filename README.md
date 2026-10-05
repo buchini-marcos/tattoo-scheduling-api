@@ -13,7 +13,7 @@ Uma API REST moderna desenvolvida em Python com **FastAPI** para gerenciar o flu
 *   **Python 3** - Linguagem base do projeto.
 *   **FastAPI** - Framework web moderno, veloz e de alto desempenho.
 *   **Uvicorn** - Servidor ASGI para rodar a aplicação localmente.
-*   **Pydantic** - Validação e estruturação de dados.
+*   **SQLite** - Validação e estruturação de dados.
 
 ## 📦 Como Rodar o Projeto Localmente
 
@@ -42,4 +42,4 @@ Após iniciar o servidor, abra o seu navegador e acesse a documentação interat
 👉 **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 ---
-🛠️ **Este projeto está sendo desenvolvido como parte dos meus estudos para aprender Engenharia de Software e Back-end com Python.**
+🛠️ **Este projeto está sendo desenvolvido como parte dos meus estudos para aprender Engenharia de Software e Back-end com Python e consolidação de dados com SQL.**

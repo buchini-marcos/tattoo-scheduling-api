@@ -117,6 +117,53 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
+import sqlite3
+nome_banco = "estudio.db"
+
+def conectar():
+    conexao = sqlite3.connect(nome_banco)
+    conexao.row_factory = sqlite3.Row
+    conexao.execute("PRAGMA foreign_keys = ON")
+    return conexao
+
+def criar_tabelas():
+    conexao = conectar()
+
+    conexao.execute("""
+        CREATE TABLE IF NOT EXISTS clientes(
+            id INTEGER PRIMARY KEY,
+            nome TEXT NOT NULL,
+            telefone TEXT NOT NULL,
+            estilo_tatuagem TEXT NOT NULL,
+            local_tatuagem TEXT NOT NULL
+         )
+    """)
+
+    conexao.execute("""
+        CREATE TABLE IF NOT EXISTS fila_espera (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL UNIQUE,
+            FOREIGN KEY (cliente_id) REFERENCES clientes (id)
+         )
+    """)
+
+    conexao.execute(""" 
+        CREATE TABLE IF NOT EXISTS agendamentos (
+        id INTEGER PRIMARY KEY,
+        cliente_id INTEGER NOT NULL,
+        data_hora TEXT NOT NULL,
+        tatuador TEXT NOT NULL,
+        UNIQUE (data_hora, tatuador),
+        FOREIGN KEY (cliente_id) REFERENCES clientes (id)
+        )
+
+    """)
+
+    conexao.commit()
+    conexao.close()
+
+criar_tabelas()
+
 app = FastAPI(title="Estúdio de Tatuagem - Agendamento e Fila")
 
 # ==============================================================================
@@ -157,15 +204,29 @@ def home():
 # --- Rotas para Clientes ---
 @app.post("/clientes/", response_model=Cliente)
 def cadastrar_cliente(cliente: Cliente):
-    for c in banco_clientes:
-        if c.id == cliente.id:
-            raise HTTPException(status_code=400, detail="ID de cliente já cadastrado.")
-    banco_clientes.append(cliente)
+    conexao = conectar()
+    try:
+        conexao.execute(
+            """
+            INSERT INTO clientes (id, nome, telefone, estilo_tatuagem, local_tatuagem)
+            VALUES (?,?,?,?,?)
+            """,
+            (cliente.id, cliente.nome, cliente.telefone, cliente.estilo_tatuagem, cliente.local_tatuagem),
+        )
+        conexao.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="ID de cliente já cadastrado.")
+    finally:
+        conexao.close()
     return cliente
 
 @app.get("/clientes/", response_model=List[Cliente])
 def listar_clientes():
-    return banco_clientes
+    conexao = conectar()
+    linhas = conexao.execute("SELECT * FROM clientes").fetchall()
+    conexao.close()
+    return [dict(linha) for linha in linhas]
+
 
 # --- Rotas para Fila de Espera ---
 @app.post("/fila/{cliente_id}")
@@ -192,6 +253,10 @@ def ver_fila():
 # --- Rotas para Agendamentos ---
 @app.post("/agendamentos/", response_model=Agendamento)
 def criar_agendamento(agendamento: Agendamento):
+    # Verifica se o id já existe
+    for a in banco_agendamentos:
+        if a.id == agendamento.id:
+            raise HTTPException(status_code=400, detail="ID de agendamento já cadastrado no sistema.")
     # Verifica se o cliente existe
     cliente_existe = any(c.id == agendamento.cliente_id for c in banco_clientes)
     if not cliente_existe:
@@ -199,6 +264,7 @@ def criar_agendamento(agendamento: Agendamento):
 
     if agendamento.tatuador not in tatuadores_permitidos:
         raise HTTPException(status_code=400, detail=f"O tatuador {agendamento.tatuador} não existe nesse estúdio.")
+
     
     # Valida conflito de horário para o mesmo tatuador
     for agendado in banco_agendamentos:
@@ -225,3 +291,12 @@ def cancelar_agendamento(agendamento_id: int):
 
     banco_agendamentos.remove(agendamento_encontrado)
     return {"mensagem": f"Agendamento {agendamento_id} cancelado com sucesso."}
+
+@app.delete("/fila/{cliente_id}")
+def sair_da_fila(cliente_id: int):
+    for c in fila_espera:
+        if c.id == cliente_id:
+            fila_espera.remove(c)
+            return {"mensagem":f"{c.nome} saiu da fila de espera."}
+
+    raise HTTPException(status_code=404, detail="Cliente não está na fila.")
