@@ -136,7 +136,7 @@ def criar_tabelas():
             telefone TEXT NOT NULL,
             estilo_tatuagem TEXT NOT NULL,
             local_tatuagem TEXT NOT NULL
-         )
+        )   
     """)
 
     conexao.execute("""
@@ -144,17 +144,17 @@ def criar_tabelas():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cliente_id INTEGER NOT NULL UNIQUE,
             FOREIGN KEY (cliente_id) REFERENCES clientes (id)
-         )
+        )
     """)
 
     conexao.execute(""" 
         CREATE TABLE IF NOT EXISTS agendamentos (
-        id INTEGER PRIMARY KEY,
-        cliente_id INTEGER NOT NULL,
-        data_hora TEXT NOT NULL,
-        tatuador TEXT NOT NULL,
-        UNIQUE (data_hora, tatuador),
-        FOREIGN KEY (cliente_id) REFERENCES clientes (id)
+            id INTEGER PRIMARY KEY,
+            cliente_id INTEGER NOT NULL,
+            data_hora TEXT NOT NULL,
+            tatuador TEXT NOT NULL,
+            UNIQUE (data_hora, tatuador),
+            FOREIGN KEY (cliente_id) REFERENCES clientes (id)
         )
 
     """)
@@ -166,12 +166,6 @@ criar_tabelas()
 
 app = FastAPI(title="Estúdio de Tatuagem - Agendamento e Fila")
 
-# ==============================================================================
-# 1. BANCO DE DADOS EM MEMÓRIA (Variáveis globais)
-# ==============================================================================
-banco_clientes = []
-fila_espera = []
-banco_agendamentos = []
 
 # --- LISTA OFICIAL DE TATUADORES DO ESTÚDIO ---
 # Modifique os nomes abaixo para os profissionais do seu estúdio fictício!
@@ -231,72 +225,123 @@ def listar_clientes():
 # --- Rotas para Fila de Espera ---
 @app.post("/fila/{cliente_id}")
 def entrar_na_fila(cliente_id: int):
-    cliente_encontrado = None
-    for c in banco_clientes:
-        if c.id == cliente_id:
-            cliente_encontrado = c
-            break
-            
-    if not cliente_encontrado:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado. Cadastre-o primeiro.")
-    
-    if cliente_encontrado in fila_espera:
-        return {"mensagem": f"{cliente_encontrado.nome} já está na fila."}
-        
-    fila_espera.append(cliente_encontrado)
-    return {"mensagem": f"{cliente_encontrado.nome} foi adicionado à fila de espera!", "posicao": len(fila_espera)}
+    conexao = conectar()
+    try:
+        cliente = conexao.execute(
+            "SELECT nome FROM clientes WHERE id = ?", (cliente_id,),
+        ).fetchone()
+
+        if cliente is None:
+            raise HTTPException(status_code=404, detail="CLiente não encontrado. Cadastre-o primeiro.")
+
+        ja_na_fila = conexao.execute(
+            "SELECT 1 FROM fila_espera WHERE cliente_id = ?", (cliente_id,)
+        ).fetchone()
+
+        if ja_na_fila:
+            return {"mensagem": f"{cliente['nome']} já está na fila."}
+
+        conexao.execute("INSERT INTO fila_espera (cliente_id) VALUES (?)", (cliente_id,))
+        conexao.commit()
+
+        posicao = conexao.execute("SELECT COUNT(*) FROM fila_espera").fetchone()[0]
+        return {"mensagem": f"{cliente['nome']} foi adicionado à fila de espera!", "Posição": posicao}
+
+    finally:
+        conexao.close()
+   
 
 @app.get("/fila/")
 def ver_fila():
-    return {"fila_atual": [c.nome for c in fila_espera]}
+    conexao = conectar()
+    linhas = conexao.execute(
+        """
+        SELECT clientes.id AS id_cliente, clientes.nome AS nome_cliente
+        FROM fila_espera
+        JOIN clientes ON clientes.id = fila_espera.cliente_id
+        ORDER BY fila_espera.id
+        """
+    ).fetchall()
+    conexao.close()
+
+    fila = []
+    for posicao, linha in enumerate(linhas, start=1):
+        fila.append({
+            "posicao": posicao,
+            "nome": linha["nome_cliente"],
+            "id_cliente": linha["id_cliente"],
+        })
+
+    return {"fila_atual": fila}
+
+@app.delete("/fila/{cliente_id}")
+def sair_da_fila(cliente_id: int):
+    conexao = conectar()
+    try:
+        cursor = conexao.execute(
+            "DELETE FROM fila_espera WHERE cliente_id = ?", (cliente_id,)
+        )   
+        conexao.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Cliente não está na fila.")
+
+        return {"mensagem": f"Cliente {cliente_id} saiu da fila de espera."}
+    finally:
+        conexao.close()
 
 # --- Rotas para Agendamentos ---
 @app.post("/agendamentos/", response_model=Agendamento)
 def criar_agendamento(agendamento: Agendamento):
-    # Verifica se o id já existe
-    for a in banco_agendamentos:
-        if a.id == agendamento.id:
-            raise HTTPException(status_code=400, detail="ID de agendamento já cadastrado no sistema.")
-    # Verifica se o cliente existe
-    cliente_existe = any(c.id == agendamento.cliente_id for c in banco_clientes)
-    if not cliente_existe:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado para este agendamento.")
-
     if agendamento.tatuador not in tatuadores_permitidos:
         raise HTTPException(status_code=400, detail=f"O tatuador {agendamento.tatuador} não existe nesse estúdio.")
 
-    
-    # Valida conflito de horário para o mesmo tatuador
-    for agendado in banco_agendamentos:
-        if agendado.data_hora == agendamento.data_hora and agendado.tatuador == agendamento.tatuador:
-            raise HTTPException(status_code=400, detail="Horário não disponível com este tatuador.")
-            
-    banco_agendamentos.append(agendamento)
+    conexao = conectar()
+    try:
+        cliente = conexao.execute(
+            "SELECT 1 FROM clientes WHERE id = ?", (agendamento.cliente_id,)
+        ).fetchone()
+
+        if cliente is None:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado para este agendamento.")
+
+        conexao.execute(
+            """
+            INSERT INTO agendamentos (id, cliente_id, data_hora, tatuador)
+            VALUES (?,?,?,?)
+            """,
+            (agendamento.id, agendamento.cliente_id, agendamento.data_hora, agendamento.tatuador),
+        )
+        conexao.commit()
+    except sqlite3.IntegrityError as erro:
+        if "agendamentos.id" in str(erro):
+            raise HTTPException(status_code=400, detail="ID de agendamento já cadastrado no sistema.")
+        raise HTTPException(status_code=400, detail="Horário não disponível com este tatuador.")
+    finally:
+        conexao.close()
+
     return agendamento
 
 @app.get("/agendamentos/", response_model=List[Agendamento])
 def listar_agendamentos():
-    return banco_agendamentos
+    conexao = conectar()
+    linhas = conexao.execute("SELECT * FROM agendamentos ORDER BY data_hora").fetchall() # 2026-10-21 14:00
+    conexao.close()
+    return [dict(linha) for linha in linhas] 
 
 @app.delete("/agendamentos/{agendamento_id}")
 def cancelar_agendamento(agendamento_id: int):
-    agendamento_encontrado = None
-    for a in banco_agendamentos:
-        if a.id == agendamento_id:
-            agendamento_encontrado = a
-            break
+    conexao = conectar()
+    try:
+        cursor = conexao.execute(
+            "DELETE FROM agendamentos WHERE id = ?", (agendamento_id,)
+        )
+        conexao.commit()
 
-    if not agendamento_encontrado:
-        raise HTTPException(status_code=404, detail=f"Agendamento com ID {agendamento_id} não foi encontrado.")
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail=f"Agendamento com ID {agendamento_id} não foi encontrado.")
 
-    banco_agendamentos.remove(agendamento_encontrado)
-    return {"mensagem": f"Agendamento {agendamento_id} cancelado com sucesso."}
+        return {"mensagem": f"Agendamento {agendamento_id} cancelado com sucesso."}
+    finally:
+        conexao.close()
 
-@app.delete("/fila/{cliente_id}")
-def sair_da_fila(cliente_id: int):
-    for c in fila_espera:
-        if c.id == cliente_id:
-            fila_espera.remove(c)
-            return {"mensagem":f"{c.nome} saiu da fila de espera."}
-
-    raise HTTPException(status_code=404, detail="Cliente não está na fila.")
