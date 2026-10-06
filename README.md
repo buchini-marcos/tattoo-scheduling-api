@@ -42,4 +42,4 @@ Após iniciar o servidor, abra o seu navegador e acesse a documentação interat
 👉 **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 ---
-🛠️ ***Este projeto está sendo desenvolvido como parte dos meus estudos para aprender Engenharia de Software e Back-end com Python e consolidação de dados com SQL.***
+🛠️ ***Este projeto está sendo desenvolvido como parte dos meus estudos para aprender Engenharia de Software e Back-end com Python e consolidação de dados com SQLite.***
